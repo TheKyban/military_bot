@@ -14,66 +14,13 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
+import { emergencyCategories, initialSuggestions } from "@/lib/constants";
 
 type Message = {
   role: "user" | "assistant";
   content: string;
   timestamp: Date;
   suggestions?: string[];
-};
-
-const emergencyCategories = [
-  "Medical Emergency",
-  "Hostile Contact",
-  "Equipment Failure",
-  "Navigation Issues",
-  "Communication Loss",
-  "Environmental Hazards",
-];
-
-const initialSuggestions: Record<string, string[]> = {
-  "Medical Emergency": [
-    "Severe bleeding from combat injury",
-    "Heat exhaustion symptoms",
-    "Suspected fracture from fall",
-    "Combat stress reaction",
-    "Dehydration symptoms",
-  ],
-  "Hostile Contact": [
-    "Enemy sniper spotted",
-    "Suspected IED location",
-    "Ambush in progress",
-    "Civilian presence in combat zone",
-    "Unknown vehicle approaching checkpoint",
-  ],
-  "Equipment Failure": [
-    "Radio communication device malfunction",
-    "Night vision equipment failure",
-    "Vehicle breakdown in hostile area",
-    "Weapon system malfunction",
-    "GPS system failure",
-  ],
-  "Navigation Issues": [
-    "Lost in unknown territory",
-    "GPS signal lost",
-    "Unable to reach checkpoint",
-    "Terrain obstacles blocking planned route",
-    "Lost contact with patrol team",
-  ],
-  "Communication Loss": [
-    "Complete radio silence",
-    "Satellite communication failure",
-    "Lost contact with base",
-    "Signal jamming detected",
-    "Emergency beacon malfunction",
-  ],
-  "Environmental Hazards": [
-    "Extreme weather conditions",
-    "Hazardous material exposure",
-    "Flash flood warning",
-    "Wildfire in operational area",
-    "Chemical contamination suspected",
-  ],
 };
 
 export default function Home() {
@@ -83,6 +30,7 @@ export default function Home() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [isListening, setIsListening] = useState(false);
+  // @ts-ignore
   const [recognition, setRecognition] = useState<SpeechRecognition | null>(
     null
   );
@@ -100,13 +48,16 @@ export default function Home() {
       "webkitSpeechRecognition" in window
     ) {
       const SpeechRecognition =
+        // @ts-ignore
         window.SpeechRecognition || window.webkitSpeechRecognition;
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
 
+      // @ts-ignore
       recognition.onresult = (event) => {
         const transcript = Array.from(event.results)
+          // @ts-ignore
           .map((result) => result[0])
           .map((result) => result.transcript)
           .join("");
