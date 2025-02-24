@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Shield,
   AlertTriangle,
@@ -30,11 +30,20 @@ export default function Home() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [isListening, setIsListening] = useState(false);
-  // @ts-ignore
+  //@ts-ignore
   const [recognition, setRecognition] = useState<SpeechRecognition | null>(
     null
   );
   const [silenceTimer, setSilenceTimer] = useState<NodeJS.Timeout | null>(null);
+  const [currentStreamingMessage, setCurrentStreamingMessage] = useState("");
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const streamingMessageRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages, currentStreamingMessage]);
 
   useEffect(() => {
     if (selectedCategory) {
@@ -48,23 +57,23 @@ export default function Home() {
       "webkitSpeechRecognition" in window
     ) {
       const SpeechRecognition =
-        // @ts-ignore
+        //@ts-ignore
+
         window.SpeechRecognition || window.webkitSpeechRecognition;
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
 
-      // @ts-ignore
+      //@ts-ignore
       recognition.onresult = (event) => {
         const transcript = Array.from(event.results)
-          // @ts-ignore
+          //@ts-ignore
           .map((result) => result[0])
           .map((result) => result.transcript)
           .join("");
 
         setInput(transcript);
 
-        // Reset silence timer when speech is detected
         if (silenceTimer) {
           clearTimeout(silenceTimer);
         }
@@ -75,7 +84,7 @@ export default function Home() {
               setIsListening(false);
             }
           }, 3000)
-        ); // Stop after 3 seconds of silence
+        );
       };
 
       recognition.onend = () => {
@@ -105,7 +114,7 @@ export default function Home() {
         clearTimeout(silenceTimer);
       }
     } else {
-      setInput(""); // Clear input when starting new recording
+      setInput("");
       recognition.start();
       setIsListening(true);
     }
@@ -113,6 +122,8 @@ export default function Home() {
 
   const getAIResponse = async (userMessage: string) => {
     setLoading(true);
+    setCurrentStreamingMessage("");
+
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
@@ -129,20 +140,43 @@ export default function Home() {
         throw new Error("Failed to get AI response");
       }
 
-      const data = await response.json();
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("No reader available");
 
-      const newSuggestions = data.suggestions || [];
-      setSuggestions(newSuggestions);
+      let accumulatedResponse = "";
 
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: data.response,
-          timestamp: new Date(),
-          suggestions: newSuggestions,
-        },
-      ]);
+      while (true) {
+        const { done, value } = await reader.read();
+
+        if (done) break;
+
+        const chunk = new TextDecoder().decode(value);
+
+        try {
+          const jsonData = JSON.parse(chunk);
+          if (jsonData.suggestions && jsonData.done) {
+            setSuggestions(jsonData.suggestions);
+            setMessages((prev) => [
+              ...prev,
+              {
+                role: "assistant",
+                content: accumulatedResponse.trim(),
+                timestamp: new Date(),
+                suggestions: jsonData.suggestions,
+              },
+            ]);
+            setCurrentStreamingMessage("");
+            break;
+          }
+        } catch {
+          accumulatedResponse += chunk;
+          setCurrentStreamingMessage(accumulatedResponse);
+
+          if (streamingMessageRef.current) {
+            streamingMessageRef.current.scrollIntoView({ behavior: "smooth" });
+          }
+        }
+      }
     } catch (error) {
       console.error("Error getting AI response:", error);
       setMessages((prev) => [
@@ -163,7 +197,6 @@ export default function Home() {
     e.preventDefault();
     if (!input.trim() || !selectedCategory) return;
 
-    // Stop listening if active
     if (isListening) {
       recognition?.stop();
       setIsListening(false);
@@ -176,7 +209,7 @@ export default function Home() {
     };
 
     setMessages((prev) => [...prev, userMessage]);
-    setInput(""); // Clear input after sending
+    setInput("");
     await getAIResponse(input);
   };
 
@@ -193,7 +226,6 @@ export default function Home() {
 
   return (
     <div className="flex h-screen bg-zinc-900">
-      {/* Sidebar */}
       <div className="w-72 bg-zinc-800 p-4 hidden md:block border-r border-zinc-700">
         <div className="flex items-center gap-2 mb-8">
           <Shield className="h-8 w-8 text-emerald-500" />
@@ -289,15 +321,32 @@ export default function Home() {
               )}
             </div>
           ))}
-          {loading && (
+
+          {currentStreamingMessage && (
+            <div
+              ref={streamingMessageRef}
+              className="flex items-start gap-3 justify-start max-w-4xl animate-fade-in"
+            >
+              <Shield className="h-8 w-8 text-emerald-500 mt-1 flex-shrink-0" />
+              <div className="rounded-lg shadow-lg bg-zinc-800">
+                <div className="p-4">
+                  <div className="prose prose-sm max-w-none text-zinc-100 prose-headings:text-emerald-400 prose-strong:text-emerald-400">
+                    <ReactMarkdown>{currentStreamingMessage}</ReactMarkdown>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {loading && !currentStreamingMessage && (
             <div className="flex items-center gap-2 text-zinc-400 bg-zinc-800/50 p-4 rounded-lg">
               <Loader2 className="h-4 w-4 animate-spin" />
               <span>Processing response...</span>
             </div>
           )}
+          <div ref={messagesEndRef} />
         </div>
 
-        {/* Suggestions Panel */}
         {suggestions.length > 0 && (
           <div className="p-4 bg-zinc-800/50 border-t border-zinc-700">
             <h3 className="text-sm font-medium text-zinc-400 mb-3">
@@ -320,7 +369,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* Input Area */}
         <form
           onSubmit={handleSubmit}
           className="p-4 bg-zinc-800 border-t border-zinc-700"

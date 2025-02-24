@@ -40,9 +40,42 @@ export async function POST(request: Request) {
     // Remove the suggestions section from the main response
     const mainResponse = response.replace(suggestionPattern, "").trim();
 
-    return NextResponse.json({
-      response: mainResponse,
-      suggestions,
+    // Create a new ReadableStream for streaming the response
+    const stream = new ReadableStream({
+      async start(controller) {
+        const encoder = new TextEncoder();
+
+        // Split into words while preserving markdown formatting
+        const words = mainResponse.split(/(?<=[\s\n])/);
+
+        // Send initial chunk immediately
+        if (words.length > 0) {
+          controller.enqueue(encoder.encode(words[0]));
+        }
+
+        // Stream remaining words with minimal delay
+        for (let i = 1; i < words.length; i++) {
+          await new Promise((resolve) => setTimeout(resolve, 30));
+          controller.enqueue(encoder.encode(words[i]));
+        }
+
+        // Small pause before sending suggestions
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        // Send suggestions as the final chunk
+        controller.enqueue(
+          encoder.encode("\n" + JSON.stringify({ suggestions, done: true }))
+        );
+
+        controller.close();
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Transfer-Encoding": "chunked",
+      },
     });
   } catch (error) {
     console.error("Error in chat API:", error);
